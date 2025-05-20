@@ -1,9 +1,7 @@
 // --- CONFIG ---
 const GROUND_Y = -2;
-const PLAYER_X = -4.5;
-const PLAYER_SIZE = { x: 1, y: 1.1 };
-const OBSTACLE_SIZE = { x: 1.3, y: 1.6 };
-const OBSTACLE_GAP = 10; // distance between obstacles
+const PLAYER_X = 0; // Centered
+const PLAYER_SIZE = { x: 2.5, y: 2.7 }; // Bigger
 const GAME_SPEED = 0.13;
 const GRAVITY = 0.045;
 const JUMP_VELOCITY = 0.7;
@@ -48,21 +46,6 @@ const ground = new THREE.Mesh(
 ground.position.set(0, GROUND_Y - 0.55, 0);
 scene.add(ground);
 
-// --- OBSTACLE (always one, red block, z=0) ---
-let obstacle;
-function spawnObstacle(x) {
-  if (obstacle) scene.remove(obstacle);
-  const material = new THREE.MeshBasicMaterial({ color: 0xff2222 });
-  obstacle = new THREE.Mesh(
-    new THREE.BoxGeometry(OBSTACLE_SIZE.x, OBSTACLE_SIZE.y, 0.2),
-    material
-  );
-  obstacle.position.set(x, GROUND_Y + OBSTACLE_SIZE.y/2, 0);
-  scene.add(obstacle);
-  // DEBUG: log position
-  console.log('Spawned obstacle at', obstacle.position.x, obstacle.position.y, obstacle.position.z);
-}
-
 // --- GAME STATE ---
 let velocityY = 0;
 let onGround = true;
@@ -76,6 +59,8 @@ function jump() {
   if (!gameActive || !onGround) return;
   velocityY = JUMP_VELOCITY;
   onGround = false;
+  score++;
+  scoreDiv.textContent = score;
 }
 function resetGame() {
   score = 0;
@@ -84,7 +69,6 @@ function resetGame() {
   if (dino) dino.position.set(PLAYER_X, GROUND_Y + PLAYER_SIZE.y/2, 0);
   velocityY = 0;
   onGround = true;
-  spawnObstacle(PLAYER_X + OBSTACLE_GAP);
 }
 function startGame() {
   overlay.style.display = 'none';
@@ -116,17 +100,6 @@ function animate(now) {
   let dt = (now - (lastTime || now)) / 16.7;
   lastTime = now;
 
-  // Move obstacle left
-  if (obstacle) {
-    obstacle.position.x -= GAME_SPEED * dt;
-    // Respawn obstacle if offscreen
-    if (obstacle.position.x < PLAYER_X - 3) {
-      spawnObstacle(PLAYER_X + OBSTACLE_GAP);
-      score++;
-      scoreDiv.textContent = score;
-    }
-  }
-
   // Dino jump/gravity
   if (dino) {
     if (!onGround) {
@@ -138,15 +111,6 @@ function animate(now) {
         onGround = true;
       }
     }
-  }
-
-  // Collision detection
-  if (dino && obstacle) {
-    let dx = Math.abs(obstacle.position.x - dino.position.x);
-    let dy = Math.abs(obstacle.position.y - dino.position.y);
-    let collideX = dx < (PLAYER_SIZE.x/2 + OBSTACLE_SIZE.x/2 - 0.09);
-    let collideY = dy < (PLAYER_SIZE.y/2 + OBSTACLE_SIZE.y/2 - 0.09);
-    if (collideX && collideY) gameOver();
   }
 
   renderer.render(scene, camera);
