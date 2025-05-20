@@ -1,15 +1,13 @@
 // CONFIG
 const GROUND_Y = -2;
-const PLAYER_X = -2.5;
+const PLAYER_X = -4.5; // fixed X
 const GRAVITY = 0.045;
 const JUMP_VELOCITY = 0.7;
-const OBSTACLE_MIN_X = -4, OBSTACLE_MAX_X = 4;
-const OBSTACLE_START_Z = 10;
+const OBSTACLE_MIN_GAP = 2.4, OBSTACLE_MAX_GAP = 4.2;
 const OBSTACLE_SIZE = { x: 1, y: 1.2 };
 const PLAYER_SIZE = { x: 1, y: 1.1 };
-const PLAYER_JUMP_HEIGHT = 2.1;
-const GAME_SPEED = 0.18;
-const SPAWN_INTERVAL = 1050; // ms
+const GAME_SPEED = 0.13;
+const SPAWN_BUFFER = 12; // distance ahead for spawning obstacles
 
 // UI
 const scoreDiv = document.getElementById('score');
@@ -17,13 +15,19 @@ const overlay = document.getElementById('overlay');
 const overlayMsg = document.getElementById('overlay-message');
 const restartBtn = document.getElementById('restart-btn');
 
-// THREE JS
+// THREE JS (orthographic for 2D)
+let aspect = window.innerWidth / window.innerHeight;
+const viewSize = 12;
+const camera = new THREE.OrthographicCamera(
+  -aspect * viewSize / 2, aspect * viewSize / 2,
+  viewSize / 2, -viewSize / 2, 1, 1000
+);
+camera.position.z = 10;
+
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ alpha: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
-camera.position.set(0, 1, 6);
 
 // ASSETS
 const loader = new THREE.TextureLoader();
@@ -36,9 +40,9 @@ let velocityY = 0;
 let onGround = true;
 let score = 0;
 let gameActive = false;
-let obstacleTimer = null;
 let animationId = null;
 let lastTime = null;
+let nextObstacleX = PLAYER_X + SPAWN_BUFFER;
 
 // LOAD SPRITES
 loader.load('dino.png', function(texture) {
@@ -53,7 +57,7 @@ loader.load('obstacle.png', function(texture) {
 });
 function createGround() {
   const g = new THREE.Mesh(
-    new THREE.PlaneGeometry(12, 1),
+    new THREE.PlaneGeometry(50, 1),
     new THREE.MeshBasicMaterial({ color: 0x444444 })
   );
   g.position.set(0, GROUND_Y - 0.55, 0);
@@ -64,13 +68,12 @@ createGround();
 
 // OBSTACLES
 function spawnObstacle() {
-  let x = 0; // centered
   let material;
   if (obstacleTexture) {
     material = new THREE.SpriteMaterial({ map: obstacleTexture });
     let obs = new THREE.Sprite(material);
     obs.scale.set(OBSTACLE_SIZE.x, OBSTACLE_SIZE.y, 1);
-    obs.position.set(x, GROUND_Y + OBSTACLE_SIZE.y/2, OBSTACLE_START_Z);
+    obs.position.set(nextObstacleX, GROUND_Y + OBSTACLE_SIZE.y/2, 0);
     obs.userData.isSprite = true;
     scene.add(obs);
     obstacles.push(obs);
@@ -78,18 +81,22 @@ function spawnObstacle() {
     // fallback cube
     material = new THREE.MeshBasicMaterial({ color: 0xe0482f });
     let obs = new THREE.Mesh(new THREE.BoxGeometry(OBSTACLE_SIZE.x, OBSTACLE_SIZE.y, 0.8), material);
-    obs.position.set(x, GROUND_Y + OBSTACLE_SIZE.y/2, OBSTACLE_START_Z);
+    obs.position.set(nextObstacleX, GROUND_Y + OBSTACLE_SIZE.y/2, 0);
     scene.add(obs);
     obstacles.push(obs);
   }
+  // calculate next spawn X (random gap)
+  const gap = Math.random() * (OBSTACLE_MAX_GAP - OBSTACLE_MIN_GAP) + OBSTACLE_MIN_GAP;
+  nextObstacleX += gap;
 }
-function startObstacleSpawner() {
-  stopObstacleSpawner();
-  obstacleTimer = setInterval(spawnObstacle, SPAWN_INTERVAL);
-}
-function stopObstacleSpawner() {
-  if (obstacleTimer) clearInterval(obstacleTimer);
-  obstacleTimer = null;
+function resetObstacles() {
+  obstacles.forEach(o => scene.remove(o));
+  obstacles = [];
+  nextObstacleX = PLAYER_X + SPAWN_BUFFER;
+  // spawn a few at start
+  for (let i = 0; i < 3; i++) {
+    spawnObstacle();
+  }
 }
 
 // GAME LOGIC
@@ -100,8 +107,7 @@ function jump() {
 }
 
 function resetGame() {
-  obstacles.forEach(o => scene.remove(o));
-  obstacles = [];
+  resetObstacles();
   score = 0;
   scoreDiv.textContent = score;
   scoreDiv.style.display = 'block';
@@ -115,14 +121,12 @@ function startGame() {
   restartBtn.style.display = 'none';
   resetGame();
   gameActive = true;
-  startObstacleSpawner();
   lastTime = performance.now();
   animate();
 }
 
 function gameOver() {
   gameActive = false;
-  stopObstacleSpawner();
   cancelAnimationFrame(animationId);
   overlay.style.display = 'flex';
   overlayMsg.innerHTML = `<div>Game Over!</div><div style="font-size:0.7em;margin-top:18px;">Score: ${score}</div>`;
@@ -147,11 +151,11 @@ function animate(now) {
   let dt = (now - lastTime) / 16.7; // frame normalized
   lastTime = now;
 
-  // Move obstacles
+  // Move obstacles left
   for (let i = obstacles.length - 1; i >= 0; i--) {
     let obs = obstacles[i];
-    obs.position.z -= GAME_SPEED * dt;
-    if (obs.position.z < -2) {
+    obs.position.x -= GAME_SPEED * dt;
+    if (obs.position.x < PLAYER_X - 3) {
       scene.remove(obs);
       obstacles.splice(i, 1);
       score++;
@@ -172,16 +176,19 @@ function animate(now) {
     }
   }
 
+  // Spawn new obstacles as needed
+  if (obstacles.length === 0 || obstacles[obstacles.length-1].position.x < (PLAYER_X + SPAWN_BUFFER - 4)) {
+    spawnObstacle();
+  }
+
   // Collision detection
   obstacles.forEach(obs => {
     if (!dino) return;
-    let dz = Math.abs(obs.position.z - dino.position.z);
     let dx = Math.abs(obs.position.x - dino.position.x);
     let dy = Math.abs(obs.position.y - dino.position.y);
-    let collideZ = dz < 0.5;
-    let collideX = dx < (PLAYER_SIZE.x/2 + OBSTACLE_SIZE.x/2 - 0.07);
+    let collideX = dx < (PLAYER_SIZE.x/2 + OBSTACLE_SIZE.x/2 - 0.09);
     let collideY = dy < (PLAYER_SIZE.y/2 + OBSTACLE_SIZE.y/2 - 0.09);
-    if (collideZ && collideX && collideY) {
+    if (collideX && collideY) {
       gameOver();
     }
   });
@@ -191,7 +198,11 @@ function animate(now) {
 
 // RESIZE
 window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
+  aspect = window.innerWidth / window.innerHeight;
+  camera.left = -aspect * viewSize / 2;
+  camera.right = aspect * viewSize / 2;
+  camera.top = viewSize / 2;
+  camera.bottom = -viewSize / 2;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
