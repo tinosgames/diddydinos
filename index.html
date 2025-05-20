@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dino Infinite Runner</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #222; }
+    #score {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      color: #fff;
+      font-family: 'Arial Black', Arial, sans-serif;
+      font-size: 2em;
+      background: rgba(0,0,0,0.58);
+      padding: 8px 22px;
+      border-radius: 16px;
+      z-index: 2;
+      user-select: none;
+      letter-spacing: 2px;
+      box-shadow: 0 3px 8px #111a;
+      pointer-events: none;
+      display: none;
+    }
+    #overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.66);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      z-index: 5;
+      font-family: 'Arial Black', Arial, sans-serif;
+      color: #fff;
+      font-size: 2.5em;
+      letter-spacing: 2px;
+      user-select: none;
+      transition: background 0.4s;
+    }
+    #overlay button {
+      margin-top: 32px;
+      font-size: 1.2em;
+      padding: 12px 40px;
+      border-radius: 12px;
+      border: none;
+      background: #fe8b27;
+      color: #fff;
+      font-family: 'Arial Black', Arial, sans-serif;
+      letter-spacing: 1px;
+      cursor: pointer;
+      box-shadow: 0 3px 12px #000a;
+      transition: background 0.2s;
+    }
+    #overlay button:hover { background: #ffad4e; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <div id="score">0</div>
+  <div id="overlay" style="display:flex;">
+    <div id="overlay-message">Tap to Start!</div>
+    <button id="restart-btn" style="display:none;">Restart</button>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.min.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
