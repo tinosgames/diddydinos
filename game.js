@@ -4,7 +4,7 @@ const PLAYER_X = -4.5; // fixed X
 const GRAVITY = 0.045;
 const JUMP_VELOCITY = 0.7;
 const OBSTACLE_MIN_GAP = 2.4, OBSTACLE_MAX_GAP = 4.2;
-const OBSTACLE_SIZE = { x: 1, y: 1.2 };
+const OBSTACLE_SIZE = { x: 1.3, y: 1.6 }; // made bigger for visibility
 const PLAYER_SIZE = { x: 1, y: 1.1 };
 const GAME_SPEED = 0.13;
 const SPAWN_BUFFER = 12; // distance ahead for spawning obstacles
@@ -27,6 +27,7 @@ camera.position.z = 10;
 const scene = new THREE.Scene();
 const renderer = new THREE.WebGLRenderer({ alpha: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x222244); // for visibility
 document.body.appendChild(renderer.domElement);
 
 // ASSETS
@@ -69,23 +70,28 @@ createGround();
 // OBSTACLES
 function spawnObstacle() {
   let material;
+  let obs;
+  const x = nextObstacleX;
+  const y = GROUND_Y + OBSTACLE_SIZE.y/2 + 0.01; // Above ground
   if (obstacleTexture) {
     material = new THREE.SpriteMaterial({ map: obstacleTexture });
-    let obs = new THREE.Sprite(material);
+    obs = new THREE.Sprite(material);
     obs.scale.set(OBSTACLE_SIZE.x, OBSTACLE_SIZE.y, 1);
-    obs.position.set(nextObstacleX, GROUND_Y + OBSTACLE_SIZE.y/2, 0);
+    obs.position.set(x, y, 0);
     obs.userData.isSprite = true;
     scene.add(obs);
     obstacles.push(obs);
   } else {
-    // fallback cube
-    material = new THREE.MeshBasicMaterial({ color: 0xe0482f });
-    let obs = new THREE.Mesh(new THREE.BoxGeometry(OBSTACLE_SIZE.x, OBSTACLE_SIZE.y, 0.8), material);
-    obs.position.set(nextObstacleX, GROUND_Y + OBSTACLE_SIZE.y/2, 0);
+    // fallback: use a bright, tall cube
+    material = new THREE.MeshBasicMaterial({ color: 0xff2222 });
+    obs = new THREE.Mesh(new THREE.BoxGeometry(OBSTACLE_SIZE.x, OBSTACLE_SIZE.y, 0.2), material);
+    obs.position.set(x, y, 0.2);
     scene.add(obs);
     obstacles.push(obs);
   }
-  // calculate next spawn X (random gap)
+  // DEBUG: log position
+  console.log("Obstacle spawned at x:", obs.position.x, "y:", obs.position.y);
+  // Next spawn X for next obstacle
   const gap = Math.random() * (OBSTACLE_MAX_GAP - OBSTACLE_MIN_GAP) + OBSTACLE_MIN_GAP;
   nextObstacleX += gap;
 }
