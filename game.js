@@ -1,21 +1,20 @@
-// CONFIG
+// --- CONFIG ---
 const GROUND_Y = -2;
-const PLAYER_X = -4.5; // fixed X
+const PLAYER_X = -4.5;
+const PLAYER_SIZE = { x: 1, y: 1.1 };
+const OBSTACLE_SIZE = { x: 1.3, y: 1.6 };
+const OBSTACLE_GAP = 10; // distance between obstacles
+const GAME_SPEED = 0.13;
 const GRAVITY = 0.045;
 const JUMP_VELOCITY = 0.7;
-const OBSTACLE_MIN_GAP = 2.4, OBSTACLE_MAX_GAP = 4.2;
-const OBSTACLE_SIZE = { x: 1.3, y: 1.6 }; // made bigger for visibility
-const PLAYER_SIZE = { x: 1, y: 1.1 };
-const GAME_SPEED = 0.13;
-const SPAWN_BUFFER = 12; // distance ahead for spawning obstacles
 
-// UI
+// --- UI ---
 const scoreDiv = document.getElementById('score');
 const overlay = document.getElementById('overlay');
 const overlayMsg = document.getElementById('overlay-message');
 const restartBtn = document.getElementById('restart-btn');
 
-// THREE JS (orthographic for 2D)
+// --- THREE JS ORTHOGRAPHIC ---
 let aspect = window.innerWidth / window.innerHeight;
 const viewSize = 12;
 const camera = new THREE.OrthographicCamera(
@@ -27,25 +26,12 @@ camera.position.z = 10;
 const scene = new THREE.Scene();
 const renderer = new THREE.WebGLRenderer({ alpha: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setClearColor(0x222244); // for visibility
+renderer.setClearColor(0x222244);
 document.body.appendChild(renderer.domElement);
 
-// ASSETS
+// --- PLAYER ---
+let dino;
 const loader = new THREE.TextureLoader();
-let dino, ground;
-let obstacleTexture;
-let obstacles = [];
-
-// STATE
-let velocityY = 0;
-let onGround = true;
-let score = 0;
-let gameActive = false;
-let animationId = null;
-let lastTime = null;
-let nextObstacleX = PLAYER_X + SPAWN_BUFFER;
-
-// LOAD SPRITES
 loader.load('dino.png', function(texture) {
   const material = new THREE.SpriteMaterial({ map: texture });
   dino = new THREE.Sprite(material);
@@ -53,75 +39,53 @@ loader.load('dino.png', function(texture) {
   dino.position.set(PLAYER_X, GROUND_Y + PLAYER_SIZE.y/2, 0);
   scene.add(dino);
 });
-loader.load('obstacle.png', function(texture) {
-  obstacleTexture = texture;
-});
-function createGround() {
-  const g = new THREE.Mesh(
-    new THREE.PlaneGeometry(50, 1),
-    new THREE.MeshBasicMaterial({ color: 0x444444 })
+
+// --- GROUND ---
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(50, 1),
+  new THREE.MeshBasicMaterial({ color: 0x444444 })
+);
+ground.position.set(0, GROUND_Y - 0.55, 0);
+scene.add(ground);
+
+// --- OBSTACLE (always one, red block, z=0) ---
+let obstacle;
+function spawnObstacle(x) {
+  if (obstacle) scene.remove(obstacle);
+  const material = new THREE.MeshBasicMaterial({ color: 0xff2222 });
+  obstacle = new THREE.Mesh(
+    new THREE.BoxGeometry(OBSTACLE_SIZE.x, OBSTACLE_SIZE.y, 0.2),
+    material
   );
-  g.position.set(0, GROUND_Y - 0.55, 0);
-  scene.add(g);
-  ground = g;
-}
-createGround();
-
-// OBSTACLES
-function spawnObstacle() {
-  let material;
-  let obs;
-  const x = nextObstacleX;
-  const y = GROUND_Y + OBSTACLE_SIZE.y/2 + 0.01; // Above ground
-  if (obstacleTexture) {
-    material = new THREE.SpriteMaterial({ map: obstacleTexture });
-    obs = new THREE.Sprite(material);
-    obs.scale.set(OBSTACLE_SIZE.x, OBSTACLE_SIZE.y, 1);
-    obs.position.set(x, y, 0);
-    obs.userData.isSprite = true;
-    scene.add(obs);
-    obstacles.push(obs);
-  } else {
-    // fallback: use a bright, tall cube
-    material = new THREE.MeshBasicMaterial({ color: 0xff2222 });
-    obs = new THREE.Mesh(new THREE.BoxGeometry(OBSTACLE_SIZE.x, OBSTACLE_SIZE.y, 0.2), material);
-    obs.position.set(x, y, 0.2);
-    scene.add(obs);
-    obstacles.push(obs);
-  }
+  obstacle.position.set(x, GROUND_Y + OBSTACLE_SIZE.y/2, 0);
+  scene.add(obstacle);
   // DEBUG: log position
-  console.log("Obstacle spawned at x:", obs.position.x, "y:", obs.position.y);
-  // Next spawn X for next obstacle
-  const gap = Math.random() * (OBSTACLE_MAX_GAP - OBSTACLE_MIN_GAP) + OBSTACLE_MIN_GAP;
-  nextObstacleX += gap;
-}
-function resetObstacles() {
-  obstacles.forEach(o => scene.remove(o));
-  obstacles = [];
-  nextObstacleX = PLAYER_X + SPAWN_BUFFER;
-  // spawn a few at start
-  for (let i = 0; i < 3; i++) {
-    spawnObstacle();
-  }
+  console.log('Spawned obstacle at', obstacle.position.x, obstacle.position.y, obstacle.position.z);
 }
 
-// GAME LOGIC
+// --- GAME STATE ---
+let velocityY = 0;
+let onGround = true;
+let score = 0;
+let gameActive = false;
+let animationId = null;
+let lastTime = null;
+
+// --- GAME LOGIC ---
 function jump() {
   if (!gameActive || !onGround) return;
   velocityY = JUMP_VELOCITY;
   onGround = false;
 }
-
 function resetGame() {
-  resetObstacles();
   score = 0;
   scoreDiv.textContent = score;
   scoreDiv.style.display = 'block';
   if (dino) dino.position.set(PLAYER_X, GROUND_Y + PLAYER_SIZE.y/2, 0);
   velocityY = 0;
   onGround = true;
+  spawnObstacle(PLAYER_X + OBSTACLE_GAP);
 }
-
 function startGame() {
   overlay.style.display = 'none';
   restartBtn.style.display = 'none';
@@ -130,7 +94,6 @@ function startGame() {
   lastTime = performance.now();
   animate();
 }
-
 function gameOver() {
   gameActive = false;
   cancelAnimationFrame(animationId);
@@ -138,32 +101,27 @@ function gameOver() {
   overlayMsg.innerHTML = `<div>Game Over!</div><div style="font-size:0.7em;margin-top:18px;">Score: ${score}</div>`;
   restartBtn.style.display = 'block';
 }
-
 function tapAnywhere(e) {
   e.preventDefault();
-  if (!gameActive && overlay.style.display !== 'none') {
-    startGame();
-  } else if (gameActive) {
-    jump();
-  }
+  if (!gameActive && overlay.style.display !== 'none') startGame();
+  else if (gameActive) jump();
 }
 window.addEventListener('mousedown', tapAnywhere);
 window.addEventListener('touchstart', tapAnywhere, { passive: false });
 restartBtn.addEventListener('click', startGame);
 
-// ANIMATE
+// --- ANIMATE ---
 function animate(now) {
   animationId = requestAnimationFrame(animate);
-  let dt = (now - lastTime) / 16.7; // frame normalized
+  let dt = (now - (lastTime || now)) / 16.7;
   lastTime = now;
 
-  // Move obstacles left
-  for (let i = obstacles.length - 1; i >= 0; i--) {
-    let obs = obstacles[i];
-    obs.position.x -= GAME_SPEED * dt;
-    if (obs.position.x < PLAYER_X - 3) {
-      scene.remove(obs);
-      obstacles.splice(i, 1);
+  // Move obstacle left
+  if (obstacle) {
+    obstacle.position.x -= GAME_SPEED * dt;
+    // Respawn obstacle if offscreen
+    if (obstacle.position.x < PLAYER_X - 3) {
+      spawnObstacle(PLAYER_X + OBSTACLE_GAP);
       score++;
       scoreDiv.textContent = score;
     }
@@ -182,27 +140,19 @@ function animate(now) {
     }
   }
 
-  // Spawn new obstacles as needed
-  if (obstacles.length === 0 || obstacles[obstacles.length-1].position.x < (PLAYER_X + SPAWN_BUFFER - 4)) {
-    spawnObstacle();
-  }
-
   // Collision detection
-  obstacles.forEach(obs => {
-    if (!dino) return;
-    let dx = Math.abs(obs.position.x - dino.position.x);
-    let dy = Math.abs(obs.position.y - dino.position.y);
+  if (dino && obstacle) {
+    let dx = Math.abs(obstacle.position.x - dino.position.x);
+    let dy = Math.abs(obstacle.position.y - dino.position.y);
     let collideX = dx < (PLAYER_SIZE.x/2 + OBSTACLE_SIZE.x/2 - 0.09);
     let collideY = dy < (PLAYER_SIZE.y/2 + OBSTACLE_SIZE.y/2 - 0.09);
-    if (collideX && collideY) {
-      gameOver();
-    }
-  });
+    if (collideX && collideY) gameOver();
+  }
 
   renderer.render(scene, camera);
 }
 
-// RESIZE
+// --- RESIZE ---
 window.addEventListener('resize', () => {
   aspect = window.innerWidth / window.innerHeight;
   camera.left = -aspect * viewSize / 2;
@@ -213,7 +163,7 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// UI INIT
+// --- UI INIT ---
 function showStartScreen() {
   overlay.style.display = 'flex';
   overlayMsg.textContent = 'Tap to Start!';
