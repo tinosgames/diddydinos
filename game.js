@@ -46,10 +46,9 @@ const ground = new THREE.Mesh(
 ground.position.set(0, GROUND_Y - 0.55, 0);
 scene.add(ground);
 
-// --- BABY OIL SPRITE ---
+// --- BABY OIL SPRITES ---
 let babyOilTexture, babyOilSprites = [];
 let babyOilActive = false;
-let babyOilTimeout = null;
 loader.load('babyoil.png', function(texture) {
   babyOilTexture = texture;
 });
@@ -92,7 +91,6 @@ function clearParticles() {
 let sidewaysDino = null, bouncyDino = null;
 let bouncingDinosActive = false;
 let bouncyDinoVelocityY = 0;
-let bouncyDinoOnSideways = false;
 const BOUNCE_VELOCITY = 0.7;
 
 // --- EFFECT TIMERS ---
@@ -106,6 +104,7 @@ let score = 0;
 let gameActive = false;
 let animationId = null;
 let lastTime = null;
+let babyOilTimeout = null;
 
 // --- GAME LOGIC ---
 function jump() {
@@ -195,12 +194,10 @@ function updateBabyOilSprites(time) {
     let s = babyOilSprites[i];
     let ud = s.userData;
     ud.angle += ud.speed;
-    // Fly around the dino center in spirals
     s.position.x = Math.cos(ud.angle + ud.phase) * ud.radius;
     s.position.y = Math.sin(ud.angle + ud.phase) * ud.radius * 0.7 + 0.5;
     s.position.z = 0.3 + i * 0.05;
-    // Gradually spiral in
-    if (ud.radius > 1.2) ud.radius -= 0.012; 
+    if (ud.radius > 1.2) ud.radius -= 0.012;
   }
 }
 function removeBabyOilSprites() {
@@ -239,12 +236,11 @@ function showBouncingDinos() {
     // Place above sideways dino
     bouncyDino.position.set(
       PLAYER_X + 5.5,
-      sidewaysDino.position.y + sidewaysDino.scale.y/2 + (PLAYER_SIZE.y * 0.8)/2 + 1,
+      sidewaysDino.position.y + sidewaysDino.scale.y/2 + (PLAYER_SIZE.y * 0.8)/2 + 2,
       0.02
     );
     scene.add(bouncyDino);
     bouncyDinoVelocityY = 0;
-    bouncyDinoOnSideways = false;
   }
   bouncingDinosActive = true;
 }
@@ -279,13 +275,9 @@ function updateBouncingDinos(dt) {
 // --- RESET EFFECT VISUALS ---
 function resetEffectVisuals() {
   renderer.setClearColor(0x222244);
-  removeParticles();
+  clearParticles();
   removeBabyOilSprites();
   babyOilActive = false;
-  particlesActive = false;
-  particlesMerged = false;
-  effectActive = false;
-  effectTimeout = null;
 }
 
 // --- ANIMATE ---
