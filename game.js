@@ -46,6 +46,23 @@ const ground = new THREE.Mesh(
 ground.position.set(0, GROUND_Y - 0.55, 0);
 scene.add(ground);
 
+// --- BABY OIL SPRITE ---
+let babyOilTexture, babyOilSprites = [];
+let babyOilActive = false;
+loader.load('babyoil.png', function(texture) {
+  babyOilTexture = texture;
+});
+
+// --- PARTICLE EFFECT ---
+let particles = [];
+let particlesActive = false;
+let particlesMerged = false;
+const PARTICLE_COUNT = 64;
+
+// --- EFFECT TIMERS ---
+let effectActive = false;
+let effectTimeout = null;
+
 // --- GAME STATE ---
 let velocityY = 0;
 let onGround = true;
@@ -61,6 +78,9 @@ function jump() {
   onGround = false;
   score++;
   scoreDiv.textContent = score;
+  if (score % 500 === 0 && score > 0) {
+    triggerSpecialEffect();
+  }
 }
 function resetGame() {
   score = 0;
@@ -69,6 +89,17 @@ function resetGame() {
   if (dino) dino.position.set(PLAYER_X, GROUND_Y + PLAYER_SIZE.y/2, 0);
   velocityY = 0;
   onGround = true;
+  removeBabyOilSprites();
+  removeParticles();
+  babyOilActive = false;
+  particlesActive = false;
+  particlesMerged = false;
+  renderer.setClearColor(0x222244);
+  effectActive = false;
+  if (effectTimeout) {
+    clearTimeout(effectTimeout);
+    effectTimeout = null;
+  }
 }
 function startGame() {
   overlay.style.display = 'none';
@@ -88,11 +119,152 @@ function gameOver() {
 function tapAnywhere(e) {
   e.preventDefault();
   if (!gameActive && overlay.style.display !== 'none') startGame();
-  else if (gameActive) jump();
+  else if (gameActive && !effectActive) jump();
 }
 window.addEventListener('mousedown', tapAnywhere);
 window.addEventListener('touchstart', tapAnywhere, { passive: false });
 restartBtn.addEventListener('click', startGame);
+
+// --- BABY OIL ANIMATION ---
+function triggerSpecialEffect() {
+  if (effectActive) return;
+  effectActive = true;
+  babyOilActive = true;
+  createBabyOilSprites();
+  // After oil flies for a few seconds, start particles
+  effectTimeout = setTimeout(() => {
+    triggerParticles();
+    effectTimeout = setTimeout(() => {
+      resetEffectVisuals();
+    }, 5000); // particles/whiteout last for 5 seconds then revert
+  }, 3200);
+}
+function createBabyOilSprites() {
+  removeBabyOilSprites();
+  const count = 5;
+  for (let i = 0; i < count; i++) {
+    let sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: babyOilTexture, transparent: true }));
+    sprite.scale.set(2.5, 2.5, 1);
+    // Start at random positions around the dino
+    sprite.position.set(
+      (Math.random() - 0.5) * 10,
+      (Math.random() * 8) - 2,
+      0.1 + i * 0.05 // slight z offset
+    );
+    sprite.userData = {
+      angle: Math.random() * Math.PI * 2,
+      speed: 0.03 + Math.random() * 0.04,
+      radius: 6 + Math.random() * 2,
+      phase: Math.random() * Math.PI * 2
+    };
+    scene.add(sprite);
+    babyOilSprites.push(sprite);
+  }
+}
+function updateBabyOilSprites(time) {
+  if (!babyOilActive) return;
+  for (let i = 0; i < babyOilSprites.length; i++) {
+    let s = babyOilSprites[i];
+    let ud = s.userData;
+    ud.angle += ud.speed;
+    // Fly around the dino center in spirals
+    s.position.x = Math.cos(ud.angle + ud.phase) * ud.radius;
+    s.position.y = Math.sin(ud.angle + ud.phase) * ud.radius * 0.7 + 0.5;
+    s.position.z = 0.3 + i * 0.05;
+    // Gradually spiral in
+    if (ud.radius > 1.2) ud.radius -= 0.012; 
+  }
+}
+function removeBabyOilSprites() {
+  while (babyOilSprites.length > 0) {
+    let s = babyOilSprites.pop();
+    scene.remove(s);
+  }
+}
+
+// --- WHITE PARTICLE EFFECT ---
+function triggerParticles() {
+  particlesActive = true;
+  // Create PARTICLE_COUNT particles at random positions around center
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    let mat = new THREE.SpriteMaterial({ color: 0xffffff });
+    let p = new THREE.Sprite(mat);
+    let angle = Math.random() * Math.PI * 2;
+    let radius = 4 + Math.random() * 4;
+    p.scale.set(0.7, 0.7, 1);
+    p.position.set(Math.cos(angle) * radius, Math.sin(angle) * radius, 0.4 + i * 0.005);
+    p.userData = {
+      vx: (0 - p.position.x) / (52 + Math.random() * 22), // ~52 frames to center
+      vy: (0 - p.position.y) / (52 + Math.random() * 22),
+      merge: false
+    };
+    scene.add(p);
+    particles.push(p);
+  }
+  // After a short time, trigger merge
+  setTimeout(() => {
+    mergeParticles();
+  }, 1400);
+}
+function updateParticles() {
+  if (!particlesActive || particlesMerged) return;
+  for (let i = 0; i < particles.length; i++) {
+    let p = particles[i];
+    p.position.x += p.userData.vx;
+    p.position.y += p.userData.vy;
+    // When close to center, stop at center
+    if (Math.abs(p.position.x) < 0.18 && Math.abs(p.position.y) < 0.18) {
+      p.position.x = 0;
+      p.position.y = 0;
+      p.userData.merge = true;
+    }
+  }
+}
+function mergeParticles() {
+  particlesMerged = true;
+  // Animate all particles scaling up into one and fade to white
+  let scale = 0.7;
+  let alpha = 1;
+  function animateMerge() {
+    scale += 0.14;
+    alpha += 0.13;
+    for (let i = 0; i < particles.length; i++) {
+      particles[i].scale.set(scale, scale, 1);
+      particles[i].material.opacity = Math.max(1 - (alpha - 1) / 2, 0);
+      particles[i].material.transparent = true;
+    }
+    if (scale < 18) {
+      requestAnimationFrame(animateMerge);
+    } else {
+      whiteoutScreen();
+    }
+  }
+  animateMerge();
+}
+function removeParticles() {
+  while (particles.length > 0) {
+    let p = particles.pop();
+    scene.remove(p);
+  }
+}
+function whiteoutScreen() {
+  renderer.setClearColor(0xffffff, 1);
+  removeParticles();
+  removeBabyOilSprites();
+}
+
+// --- RESET EFFECT VISUALS ---
+function resetEffectVisuals() {
+  // Revert everything back to normal after 5 seconds of effect
+  renderer.setClearColor(0x222244);
+  removeParticles();
+  removeBabyOilSprites();
+  babyOilActive = false;
+  particlesActive = false;
+  particlesMerged = false;
+  effectActive = false;
+  effectTimeout = null;
+}
 
 // --- ANIMATE ---
 function animate(now) {
@@ -112,6 +284,12 @@ function animate(now) {
       }
     }
   }
+
+  // Baby oil sprites
+  if (babyOilActive) updateBabyOilSprites(now);
+
+  // Particles
+  if (particlesActive && !particlesMerged) updateParticles();
 
   renderer.render(scene, camera);
 }
