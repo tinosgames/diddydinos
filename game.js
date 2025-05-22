@@ -78,7 +78,7 @@ function jump() {
   onGround = false;
   score++;
   scoreDiv.textContent = score;
-  if (score % 500 === 0 && score > 0) {
+  if (score % 50 === 0 && score > 0) {
     triggerSpecialEffect();
   }
 }
