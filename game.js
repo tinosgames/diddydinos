@@ -103,7 +103,7 @@ let onGround = true;
 function jump() {
   // Only allow jump if on ground and game is active
   if (!gameActive || !onGround) return;
-  velocityY = 0.7;
+  velocityY = 0.7; // Start jump velocity
   onGround = false;
   score++;
   scoreDiv.textContent = score;
@@ -236,16 +236,11 @@ function animate(now) {
   if (specialDinoVisible) updateSpecialDinos(dt, now);
 
   // Fast bounce for main dino if effect is active
-  if (effectActive && dino) {
-    if (onGround) {
-      // If effect is active and dino is on ground, make it bounce visually (but not logic)
-      dino.position.y = GROUND_Y + PLAYER_SIZE.y/2 + Math.sin(now * 0.04) * 2.7;
-      if (Math.random() < 0.37) {
-        spawnParticlesAt(dino.position.x, dino.position.y + 1.2, 0.03);
-      }
+  if (effectActive && dino && onGround) {
+    dino.position.y = GROUND_Y + PLAYER_SIZE.y/2 + Math.sin(now * 0.04) * 2.7;
+    if (Math.random() < 0.37) {
+      spawnParticlesAt(dino.position.x, dino.position.y + 1.2, 0.03);
     }
-  } else if (dino && onGround) {
-    dino.position.y = GROUND_Y + PLAYER_SIZE.y/2;
   }
 
   updateParticles(dt);
