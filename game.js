@@ -1,7 +1,7 @@
 // --- CONFIG ---
 const GROUND_Y = -2;
 const PLAYER_X = 0; // Centered
-const PLAYER_SIZE = { x: 2.5, y: 2.7 }; // Bigger
+const PLAYER_SIZE = { x: 2.5, y: 2.7 };
 
 // --- UI ---
 const scoreDiv = document.getElementById('score');
@@ -96,9 +96,15 @@ let gameActive = false;
 let animationId = null;
 let lastTime = null;
 
+let velocityY = 0;
+let onGround = true;
+
 // --- GAME LOGIC ---
 function jump() {
-  if (!gameActive) return;
+  // Only allow jump if on ground and game is active
+  if (!gameActive || !onGround) return;
+  velocityY = 0.7;
+  onGround = false;
   score++;
   scoreDiv.textContent = score;
   if (score % 50 === 0 && score > 0) {
@@ -117,6 +123,8 @@ function resetGame() {
   scoreDiv.textContent = score;
   scoreDiv.style.display = 'block';
   if (dino) dino.position.set(PLAYER_X, GROUND_Y + PLAYER_SIZE.y/2, 0);
+  velocityY = 0;
+  onGround = true;
   renderer.setClearColor(0x222244);
   effectActive = false;
   if (effectTimeout) {
@@ -182,7 +190,6 @@ function updateSpecialDinos(dt, time) {
   const ampBouncy = 1.3;
 
   bouncePhase += dt / 60;
-  const mainY = GROUND_Y + PLAYER_SIZE.y/2 + Math.sin(time * 0.012 * freqMain) * ampMain;
   sidewaysDino.position.y = GROUND_Y + PLAYER_SIZE.y/2 + Math.cos(time * 0.012 * freqMain) * 1.2;
   bouncyDino.position.y = sidewaysDino.position.y + sidewaysDino.scale.y/2 + bouncyDino.scale.y/2 +
     Math.abs(Math.sin(time * 0.016 * freqBouncy)) * ampBouncy + 0.2;
@@ -212,16 +219,32 @@ function animate(now) {
   let dt = (now - (lastTime || now)) / 16.7;
   lastTime = now;
 
+  // Dino jump/gravity
+  if (dino) {
+    if (!onGround) {
+      dino.position.y += velocityY * dt;
+      velocityY -= 0.045 * dt;
+      if (dino.position.y <= GROUND_Y + PLAYER_SIZE.y/2) {
+        dino.position.y = GROUND_Y + PLAYER_SIZE.y/2;
+        velocityY = 0;
+        onGround = true;
+      }
+    }
+  }
+
   // Special sideways and bouncy dino
   if (specialDinoVisible) updateSpecialDinos(dt, now);
 
   // Fast bounce for main dino if effect is active
   if (effectActive && dino) {
-    dino.position.y = GROUND_Y + PLAYER_SIZE.y/2 + Math.sin(now * 0.04) * 2.7;
-    if (Math.random() < 0.37) {
-      spawnParticlesAt(dino.position.x, dino.position.y + 1.2, 0.03);
+    if (onGround) {
+      // If effect is active and dino is on ground, make it bounce visually (but not logic)
+      dino.position.y = GROUND_Y + PLAYER_SIZE.y/2 + Math.sin(now * 0.04) * 2.7;
+      if (Math.random() < 0.37) {
+        spawnParticlesAt(dino.position.x, dino.position.y + 1.2, 0.03);
+      }
     }
-  } else if (dino) {
+  } else if (dino && onGround) {
     dino.position.y = GROUND_Y + PLAYER_SIZE.y/2;
   }
 
