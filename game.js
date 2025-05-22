@@ -2,7 +2,6 @@
 const GROUND_Y = -2;
 const PLAYER_X = 0; // Centered
 const PLAYER_SIZE = { x: 2.5, y: 2.7 }; // Bigger
-const GAME_SPEED = 0.13;
 const GRAVITY = 0.045;
 const JUMP_VELOCITY = 0.7;
 
@@ -28,9 +27,10 @@ renderer.setClearColor(0x222244);
 document.body.appendChild(renderer.domElement);
 
 // --- PLAYER ---
-let dino;
+let dino, dinoTexture;
 const loader = new THREE.TextureLoader();
 loader.load('dino.png', function(texture) {
+  dinoTexture = texture;
   const material = new THREE.SpriteMaterial({ map: texture });
   dino = new THREE.Sprite(material);
   dino.scale.set(PLAYER_SIZE.x, PLAYER_SIZE.y, 1);
@@ -49,15 +49,51 @@ scene.add(ground);
 // --- BABY OIL SPRITE ---
 let babyOilTexture, babyOilSprites = [];
 let babyOilActive = false;
+let babyOilTimeout = null;
 loader.load('babyoil.png', function(texture) {
   babyOilTexture = texture;
 });
 
 // --- PARTICLE EFFECT ---
 let particles = [];
-let particlesActive = false;
-let particlesMerged = false;
-const PARTICLE_COUNT = 64;
+function spawnParticlesAt(x, y, z) {
+  for (let i = 0; i < 6; i++) {
+    const mat = new THREE.SpriteMaterial({ color: 0xffffff, opacity: 1, transparent: true });
+    const s = new THREE.Sprite(mat);
+    s.scale.set(0.4, 0.4, 1);
+    s.position.set(x, y, z);
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 0.12 + Math.random() * 0.16;
+    const vx = Math.cos(angle) * speed;
+    const vy = Math.sin(angle) * speed;
+    particles.push({sprite: s, vx, vy, alpha: 1});
+    scene.add(s);
+  }
+}
+function updateParticles(dt) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.sprite.position.x += p.vx * dt;
+    p.sprite.position.y += p.vy * dt;
+    p.alpha -= 0.04 * dt;
+    p.sprite.material.opacity = Math.max(0, p.alpha);
+    if (p.alpha <= 0) {
+      scene.remove(p.sprite);
+      particles.splice(i, 1);
+    }
+  }
+}
+function clearParticles() {
+  for (const p of particles) scene.remove(p.sprite);
+  particles = [];
+}
+
+// --- BOUNCING DINOS WITH GRAVITY ---
+let sidewaysDino = null, bouncyDino = null;
+let bouncingDinosActive = false;
+let bouncyDinoVelocityY = 0;
+let bouncyDinoOnSideways = false;
+const BOUNCE_VELOCITY = 0.7;
 
 // --- EFFECT TIMERS ---
 let effectActive = false;
@@ -80,6 +116,12 @@ function jump() {
   scoreDiv.textContent = score;
   if (score % 50 === 0 && score > 0) {
     triggerSpecialEffect();
+    showBouncingDinos();
+    if (babyOilTimeout) clearTimeout(babyOilTimeout);
+    babyOilTimeout = setTimeout(() => {
+      hideBouncingDinos();
+      resetEffectVisuals();
+    }, 15000);
   }
 }
 function resetGame() {
@@ -89,16 +131,11 @@ function resetGame() {
   if (dino) dino.position.set(PLAYER_X, GROUND_Y + PLAYER_SIZE.y/2, 0);
   velocityY = 0;
   onGround = true;
-  removeBabyOilSprites();
-  removeParticles();
-  babyOilActive = false;
-  particlesActive = false;
-  particlesMerged = false;
-  renderer.setClearColor(0x222244);
-  effectActive = false;
-  if (effectTimeout) {
-    clearTimeout(effectTimeout);
-    effectTimeout = null;
+  hideBouncingDinos();
+  resetEffectVisuals();
+  if (babyOilTimeout) {
+    clearTimeout(babyOilTimeout);
+    babyOilTimeout = null;
   }
 }
 function startGame() {
@@ -127,17 +164,8 @@ restartBtn.addEventListener('click', startGame);
 
 // --- BABY OIL ANIMATION ---
 function triggerSpecialEffect() {
-  if (effectActive) return;
-  effectActive = true;
   babyOilActive = true;
   createBabyOilSprites();
-  // After oil flies for a few seconds, start particles
-  effectTimeout = setTimeout(() => {
-    triggerParticles();
-    effectTimeout = setTimeout(() => {
-      resetEffectVisuals();
-    }, 5000); // particles/whiteout last for 5 seconds then revert
-  }, 3200);
 }
 function createBabyOilSprites() {
   removeBabyOilSprites();
@@ -182,80 +210,74 @@ function removeBabyOilSprites() {
   }
 }
 
-// --- WHITE PARTICLE EFFECT ---
-function triggerParticles() {
-  particlesActive = true;
-  // Create PARTICLE_COUNT particles at random positions around center
-  for (let i = 0; i < PARTICLE_COUNT; i++) {
-    let mat = new THREE.SpriteMaterial({ color: 0xffffff });
-    let p = new THREE.Sprite(mat);
-    let angle = Math.random() * Math.PI * 2;
-    let radius = 4 + Math.random() * 4;
-    p.scale.set(0.7, 0.7, 1);
-    p.position.set(Math.cos(angle) * radius, Math.sin(angle) * radius, 0.4 + i * 0.005);
-    p.userData = {
-      vx: (0 - p.position.x) / (52 + Math.random() * 22), // ~52 frames to center
-      vy: (0 - p.position.y) / (52 + Math.random() * 22),
-      merge: false
-    };
-    scene.add(p);
-    particles.push(p);
+// --- PARTICLES BURSTING FROM DINOS ---
+function particleBurstFromDinos() {
+  if (dino && Math.random() < 0.37) {
+    spawnParticlesAt(dino.position.x, dino.position.y + 1.2, 0.03);
   }
-  // After a short time, trigger merge
-  setTimeout(() => {
-    mergeParticles();
-  }, 1400);
-}
-function updateParticles() {
-  if (!particlesActive || particlesMerged) return;
-  for (let i = 0; i < particles.length; i++) {
-    let p = particles[i];
-    p.position.x += p.userData.vx;
-    p.position.y += p.userData.vy;
-    // When close to center, stop at center
-    if (Math.abs(p.position.x) < 0.18 && Math.abs(p.position.y) < 0.18) {
-      p.position.x = 0;
-      p.position.y = 0;
-      p.userData.merge = true;
-    }
+  if (sidewaysDino && Math.random() < 0.37) {
+    spawnParticlesAt(sidewaysDino.position.x, sidewaysDino.position.y + 1.0, 0.03);
+  }
+  if (bouncyDino && Math.random() < 0.37) {
+    spawnParticlesAt(bouncyDino.position.x, bouncyDino.position.y + 0.3, 0.03);
   }
 }
-function mergeParticles() {
-  particlesMerged = true;
-  // Animate all particles scaling up into one and fade to white
-  let scale = 0.7;
-  let alpha = 1;
-  function animateMerge() {
-    scale += 0.14;
-    alpha += 0.13;
-    for (let i = 0; i < particles.length; i++) {
-      particles[i].scale.set(scale, scale, 1);
-      particles[i].material.opacity = Math.max(1 - (alpha - 1) / 2, 0);
-      particles[i].material.transparent = true;
-    }
-    if (scale < 18) {
-      requestAnimationFrame(animateMerge);
-    } else {
-      whiteoutScreen();
-    }
+
+// --- BOUNCING DINOS LOGIC WITH GRAVITY ---
+function showBouncingDinos() {
+  if (!dinoTexture) return;
+  if (!sidewaysDino) {
+    sidewaysDino = new THREE.Sprite(new THREE.SpriteMaterial({ map: dinoTexture, transparent: true }));
+    sidewaysDino.scale.set(PLAYER_SIZE.y, PLAYER_SIZE.x, 1);
+    sidewaysDino.position.set(PLAYER_X + 5.5, GROUND_Y + PLAYER_SIZE.y/2, 0);
+    sidewaysDino.material.rotation = Math.PI / 2;
+    scene.add(sidewaysDino);
   }
-  animateMerge();
-}
-function removeParticles() {
-  while (particles.length > 0) {
-    let p = particles.pop();
-    scene.remove(p);
+  if (!bouncyDino) {
+    bouncyDino = new THREE.Sprite(new THREE.SpriteMaterial({ map: dinoTexture, transparent: true }));
+    bouncyDino.scale.set(PLAYER_SIZE.x * 0.8, PLAYER_SIZE.y * 0.8, 1);
+    // Place above sideways dino
+    bouncyDino.position.set(
+      PLAYER_X + 5.5,
+      sidewaysDino.position.y + sidewaysDino.scale.y/2 + (PLAYER_SIZE.y * 0.8)/2 + 1,
+      0.02
+    );
+    scene.add(bouncyDino);
+    bouncyDinoVelocityY = 0;
+    bouncyDinoOnSideways = false;
   }
+  bouncingDinosActive = true;
 }
-function whiteoutScreen() {
-  renderer.setClearColor(0xffffff, 1);
-  removeParticles();
-  removeBabyOilSprites();
+function hideBouncingDinos() {
+  if (sidewaysDino) {
+    scene.remove(sidewaysDino);
+    sidewaysDino = null;
+  }
+  if (bouncyDino) {
+    scene.remove(bouncyDino);
+    bouncyDino = null;
+  }
+  bouncingDinosActive = false;
+}
+function updateBouncingDinos(dt) {
+  if (!(sidewaysDino && bouncyDino && bouncingDinosActive)) return;
+  // Gravity for bouncy dino (bounce on sideways dino)
+  bouncyDinoVelocityY -= GRAVITY * dt;
+  bouncyDino.position.y += bouncyDinoVelocityY * dt;
+
+  // The top of the sideways dino
+  const sidewaysTopY = sidewaysDino.position.y + sidewaysDino.scale.y / 2;
+  const bouncyBottomY = bouncyDino.position.y - bouncyDino.scale.y / 2;
+
+  if (bouncyBottomY <= sidewaysTopY + 0.05) {
+    // Bounce!
+    bouncyDino.position.y = sidewaysTopY + bouncyDino.scale.y / 2 + 0.05;
+    bouncyDinoVelocityY = BOUNCE_VELOCITY;
+  }
 }
 
 // --- RESET EFFECT VISUALS ---
 function resetEffectVisuals() {
-  // Revert everything back to normal after 5 seconds of effect
   renderer.setClearColor(0x222244);
   removeParticles();
   removeBabyOilSprites();
@@ -288,8 +310,12 @@ function animate(now) {
   // Baby oil sprites
   if (babyOilActive) updateBabyOilSprites(now);
 
+  // Bouncing dinos with gravity
+  if (bouncingDinosActive) updateBouncingDinos(dt);
+
   // Particles
-  if (particlesActive && !particlesMerged) updateParticles();
+  if (babyOilActive) particleBurstFromDinos();
+  updateParticles(dt);
 
   renderer.render(scene, camera);
 }
