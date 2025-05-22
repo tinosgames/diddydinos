@@ -1,7 +1,9 @@
 // --- CONFIG ---
 const GROUND_Y = -2;
 const PLAYER_X = 0; // Centered
-const PLAYER_SIZE = { x: 2.5, y: 2.7 };
+const PLAYER_SIZE = { x: 2.5, y: 2.7 }; // Bigger
+const GRAVITY = 0.045;
+const JUMP_VELOCITY = 0.7;
 
 // --- UI ---
 const scoreDiv = document.getElementById('score');
@@ -24,12 +26,8 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x222244);
 document.body.appendChild(renderer.domElement);
 
-// --- PLAYER & CLONES ---
+// --- PLAYER ---
 let dino, dinoTexture;
-let sidewaysDino = null;
-let bouncyDino = null;
-let specialDinoVisible = false;
-
 const loader = new THREE.TextureLoader();
 loader.load('dino.png', function(texture) {
   dinoTexture = texture;
@@ -48,74 +46,75 @@ const ground = new THREE.Mesh(
 ground.position.set(0, GROUND_Y - 0.55, 0);
 scene.add(ground);
 
-// --- PARTICLE SYSTEM ---
-function createParticleMaterial() {
-  return new THREE.SpriteMaterial({ color: 0xffffff, opacity: 1, transparent: true });
-}
-let specialParticles = []; // {sprite, vx, vy, alpha}
+// --- BABY OIL SPRITES ---
+let babyOilTexture, babyOilSprites = [];
+loader.load('babyoil.png', function(texture) {
+  babyOilTexture = texture;
+});
+
+// --- PARTICLE EFFECT ---
+let particles = [];
 function spawnParticlesAt(x, y, z) {
   for (let i = 0; i < 6; i++) {
-    const mat = createParticleMaterial();
+    const mat = new THREE.SpriteMaterial({ color: 0xffffff, opacity: 1, transparent: true });
     const s = new THREE.Sprite(mat);
     s.scale.set(0.4, 0.4, 1);
     s.position.set(x, y, z);
-    // random speed in all directions
     const angle = Math.random() * Math.PI * 2;
     const speed = 0.12 + Math.random() * 0.16;
     const vx = Math.cos(angle) * speed;
     const vy = Math.sin(angle) * speed;
-    specialParticles.push({sprite: s, vx, vy, alpha: 1});
+    particles.push({sprite: s, vx, vy, alpha: 1});
     scene.add(s);
   }
 }
 function updateParticles(dt) {
-  for (let i = specialParticles.length - 1; i >= 0; i--) {
-    const p = specialParticles[i];
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
     p.sprite.position.x += p.vx * dt;
     p.sprite.position.y += p.vy * dt;
     p.alpha -= 0.04 * dt;
     p.sprite.material.opacity = Math.max(0, p.alpha);
     if (p.alpha <= 0) {
       scene.remove(p.sprite);
-      specialParticles.splice(i, 1);
+      particles.splice(i, 1);
     }
   }
 }
 function clearParticles() {
-  for (const p of specialParticles) scene.remove(p.sprite);
-  specialParticles = [];
+  for (const p of particles) scene.remove(p.sprite);
+  particles = [];
 }
 
-// --- EFFECT TIMERS ---
-let effectActive = false;
-let effectTimeout = null;
+// --- BOUNCING DINOS ---
+let sidewaysDino = null;
+let bouncyDino = null;
+let bouncingDinosActive = false;
+let bouncePhase = 0;
+
+// --- BABY OIL AND PARTICLE EFFECT STATE ---
+let babyOilActive = false;
+let babyOilTimeout = null;
 
 // --- GAME STATE ---
+let velocityY = 0;
+let onGround = true;
 let score = 0;
 let gameActive = false;
 let animationId = null;
 let lastTime = null;
 
-let velocityY = 0;
-let onGround = true;
-
 // --- GAME LOGIC ---
 function jump() {
-  // Only allow jump if on ground and game is active
   if (!gameActive || !onGround) return;
-  velocityY = 0.7; // Start jump velocity
+  velocityY = JUMP_VELOCITY;
   onGround = false;
   score++;
   scoreDiv.textContent = score;
+
   if (score % 50 === 0 && score > 0) {
-    showSpecialDinos();
-    effectActive = true;
-    if (effectTimeout) clearTimeout(effectTimeout);
-    effectTimeout = setTimeout(() => {
-      hideSpecialDinos();
-      effectActive = false;
-      clearParticles();
-    }, 5000);
+    showBouncingDinos();
+    triggerBabyOilAndParticles();
   }
 }
 function resetGame() {
@@ -125,14 +124,8 @@ function resetGame() {
   if (dino) dino.position.set(PLAYER_X, GROUND_Y + PLAYER_SIZE.y/2, 0);
   velocityY = 0;
   onGround = true;
-  renderer.setClearColor(0x222244);
-  effectActive = false;
-  if (effectTimeout) {
-    clearTimeout(effectTimeout);
-    effectTimeout = null;
-  }
-  hideSpecialDinos();
-  clearParticles();
+  hideBouncingDinos();
+  stopBabyOilAndParticles();
 }
 function startGame() {
   overlay.style.display = 'none';
@@ -158,50 +151,26 @@ window.addEventListener('mousedown', tapAnywhere);
 window.addEventListener('touchstart', tapAnywhere, { passive: false });
 restartBtn.addEventListener('click', startGame);
 
-// --- SPECIAL DINOS ---
-let bouncePhase = 0;
-function showSpecialDinos() {
+// --- BOUNCING DINOS LOGIC ---
+function showBouncingDinos() {
   if (!dinoTexture) return;
   if (!sidewaysDino) {
-    // Sideways dino (rotated 90 deg), at the right of the main dino, on ground
     sidewaysDino = new THREE.Sprite(new THREE.SpriteMaterial({ map: dinoTexture, transparent: true }));
-    sidewaysDino.scale.set(PLAYER_SIZE.y, PLAYER_SIZE.x, 1); // swap x/y for sideways
+    sidewaysDino.scale.set(PLAYER_SIZE.y, PLAYER_SIZE.x, 1);
     sidewaysDino.position.set(PLAYER_X + 5.5, GROUND_Y + PLAYER_SIZE.y/2, 0);
-    sidewaysDino.material.rotation = Math.PI / 2; // rotate 90 deg
+    sidewaysDino.material.rotation = Math.PI / 2;
     scene.add(sidewaysDino);
   }
   if (!bouncyDino) {
-    // Bouncy dino starts above sideways dino
     bouncyDino = new THREE.Sprite(new THREE.SpriteMaterial({ map: dinoTexture, transparent: true }));
     bouncyDino.scale.set(PLAYER_SIZE.x * 0.8, PLAYER_SIZE.y * 0.8, 1);
     bouncyDino.position.set(PLAYER_X + 5.5, GROUND_Y + PLAYER_SIZE.y + 2.8, 0.02);
     scene.add(bouncyDino);
   }
-  specialDinoVisible = true;
-  bouncePhase = 0; // reset bounce
+  bouncingDinosActive = true;
+  bouncePhase = 0;
 }
-
-function updateSpecialDinos(dt, time) {
-  if (!(sidewaysDino && bouncyDino && specialDinoVisible)) return;
-  // Super fast bouncing up and down, sinusoidal, and emit particles from both dinos
-  const freqMain = 10; // Hz
-  const ampMain = 2.1;
-  const freqBouncy = 15; // Hz
-  const ampBouncy = 1.3;
-
-  bouncePhase += dt / 60;
-  sidewaysDino.position.y = GROUND_Y + PLAYER_SIZE.y/2 + Math.cos(time * 0.012 * freqMain) * 1.2;
-  bouncyDino.position.y = sidewaysDino.position.y + sidewaysDino.scale.y/2 + bouncyDino.scale.y/2 +
-    Math.abs(Math.sin(time * 0.016 * freqBouncy)) * ampBouncy + 0.2;
-
-  // Emit particles from both
-  if (Math.random() < 0.45) {
-    spawnParticlesAt(sidewaysDino.position.x, sidewaysDino.position.y + 1.0, 0.03);
-    spawnParticlesAt(bouncyDino.position.x, bouncyDino.position.y + 0.3, 0.03);
-  }
-}
-
-function hideSpecialDinos() {
+function hideBouncingDinos() {
   if (sidewaysDino) {
     scene.remove(sidewaysDino);
     sidewaysDino = null;
@@ -210,7 +179,78 @@ function hideSpecialDinos() {
     scene.remove(bouncyDino);
     bouncyDino = null;
   }
-  specialDinoVisible = false;
+  bouncingDinosActive = false;
+}
+function updateBouncingDinos(dt, time) {
+  if (!(sidewaysDino && bouncyDino && bouncingDinosActive)) return;
+  const freqMain = 10;
+  const ampMain = 2.1;
+  const freqBouncy = 15;
+  const ampBouncy = 1.3;
+  bouncePhase += dt / 60;
+  sidewaysDino.position.y = GROUND_Y + PLAYER_SIZE.y/2 + Math.cos(time * 0.012 * freqMain) * 1.2;
+  bouncyDino.position.y = sidewaysDino.position.y + sidewaysDino.scale.y/2 + bouncyDino.scale.y/2 +
+    Math.abs(Math.sin(time * 0.016 * freqBouncy)) * ampBouncy + 0.2;
+}
+
+// --- BABY OIL & PARTICLE EFFECT LOGIC ---
+function triggerBabyOilAndParticles() {
+  startBabyOil();
+  if (babyOilTimeout) clearTimeout(babyOilTimeout);
+  babyOilTimeout = setTimeout(stopBabyOilAndParticles, 15000); // 15 seconds
+}
+function startBabyOil() {
+  if (babyOilActive || !babyOilTexture) return;
+  babyOilActive = true;
+  createBabyOilSprites();
+}
+function stopBabyOilAndParticles() {
+  removeBabyOilSprites();
+  babyOilActive = false;
+  clearParticles();
+  if (babyOilTimeout) {
+    clearTimeout(babyOilTimeout);
+    babyOilTimeout = null;
+  }
+}
+function createBabyOilSprites() {
+  removeBabyOilSprites();
+  const count = 5;
+  for (let i = 0; i < count; i++) {
+    let sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: babyOilTexture, transparent: true }));
+    sprite.scale.set(2.5, 2.5, 1);
+    sprite.position.set(
+      (Math.random() - 0.5) * 10,
+      (Math.random() * 8) - 2,
+      0.1 + i * 0.05
+    );
+    sprite.userData = {
+      angle: Math.random() * Math.PI * 2,
+      speed: 0.03 + Math.random() * 0.04,
+      radius: 6 + Math.random() * 2,
+      phase: Math.random() * Math.PI * 2
+    };
+    scene.add(sprite);
+    babyOilSprites.push(sprite);
+  }
+}
+function updateBabyOilSprites(time) {
+  if (!babyOilActive) return;
+  for (let i = 0; i < babyOilSprites.length; i++) {
+    let s = babyOilSprites[i];
+    let ud = s.userData;
+    ud.angle += ud.speed;
+    s.position.x = Math.cos(ud.angle + ud.phase) * ud.radius;
+    s.position.y = Math.sin(ud.angle + ud.phase) * ud.radius * 0.7 + 0.5;
+    s.position.z = 0.3 + i * 0.05;
+    if (ud.radius > 1.2) ud.radius -= 0.012;
+  }
+}
+function removeBabyOilSprites() {
+  while (babyOilSprites.length > 0) {
+    let s = babyOilSprites.pop();
+    scene.remove(s);
+  }
 }
 
 // --- ANIMATE ---
@@ -223,7 +263,7 @@ function animate(now) {
   if (dino) {
     if (!onGround) {
       dino.position.y += velocityY * dt;
-      velocityY -= 0.045 * dt;
+      velocityY -= GRAVITY * dt;
       if (dino.position.y <= GROUND_Y + PLAYER_SIZE.y/2) {
         dino.position.y = GROUND_Y + PLAYER_SIZE.y/2;
         velocityY = 0;
@@ -232,14 +272,21 @@ function animate(now) {
     }
   }
 
-  // Special sideways and bouncy dino
-  if (specialDinoVisible) updateSpecialDinos(dt, now);
+  // Bouncing dinos
+  if (bouncingDinosActive) updateBouncingDinos(dt, now);
 
-  // Fast bounce for main dino if effect is active
-  if (effectActive && dino && onGround) {
-    dino.position.y = GROUND_Y + PLAYER_SIZE.y/2 + Math.sin(now * 0.04) * 2.7;
-    if (Math.random() < 0.37) {
+  // Baby oil
+  if (babyOilActive) {
+    updateBabyOilSprites(now);
+    // Emit particles from dino and bouncing dinos
+    if (dino && Math.random() < 0.37) {
       spawnParticlesAt(dino.position.x, dino.position.y + 1.2, 0.03);
+    }
+    if (sidewaysDino && Math.random() < 0.37) {
+      spawnParticlesAt(sidewaysDino.position.x, sidewaysDino.position.y + 1.0, 0.03);
+    }
+    if (bouncyDino && Math.random() < 0.37) {
+      spawnParticlesAt(bouncyDino.position.x, bouncyDino.position.y + 0.3, 0.03);
     }
   }
 
