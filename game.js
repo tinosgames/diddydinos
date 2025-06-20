@@ -293,27 +293,77 @@ const L_EFFECT_BURST_TIME = 160; // ms
 let lEffectOrigScale = null;
 let lEffectOrigCameraZoom = null;
 
+// L Effect dino
+let lEffectDino = null;
+let lEffectDinoTexture = null;
+
+// Helper: Remove all images/sprites from the scene
+function removeAllImages() {
+  // Remove main dino
+  if (dino) {
+    scene.remove(dino);
+    dino = null;
+  }
+  // Remove bouncing dinos
+  hideBouncingDinos();
+  // Remove baby oil sprites
+  removeBabyOilSprites();
+  // Remove lEffectDino if exists
+  if (lEffectDino) {
+    scene.remove(lEffectDino);
+    lEffectDino = null;
+  }
+}
+
+// L effect trigger
 function triggerLEffect() {
-  if (!dino || lEffectActive) return;
+  if (lEffectActive) return;
   lEffectActive = true;
   lEffectStartTime = performance.now();
   lEffectState = 0;
   lEffectLastStateSwitch = lEffectStartTime;
-  lEffectOrigScale = dino.scale.clone();
-  lEffectOrigCameraZoom = camera.zoom;
+  lEffectZooming = false;
+
+  // Remove all images
+  removeAllImages();
+
+  // Load dinorex2.png and add to scene
+  new THREE.TextureLoader().load('dinorex2.png', function(texture) {
+    lEffectDinoTexture = texture;
+    lEffectDino = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
+    // Initial scale (match dino size)
+    lEffectOrigScale = new THREE.Vector3(PLAYER_SIZE.x, PLAYER_SIZE.y, 1);
+    lEffectDino.scale.copy(lEffectOrigScale);
+    lEffectDino.position.set(PLAYER_X, GROUND_Y + PLAYER_SIZE.y/2, 0);
+    scene.add(lEffectDino);
+
+    // Store camera zoom
+    lEffectOrigCameraZoom = camera.zoom;
+  });
 }
 
 function stopLEffect() {
-  if (!dino) return;
-  // Restore dino scale and camera zoom
-  dino.scale.copy(lEffectOrigScale);
-  camera.zoom = lEffectOrigCameraZoom;
+  if (lEffectDino) {
+    scene.remove(lEffectDino);
+    lEffectDino = null;
+  }
+  // Restore camera zoom
+  camera.zoom = lEffectOrigCameraZoom || 1;
   camera.updateProjectionMatrix();
   lEffectActive = false;
+
+  // Optionally, respawn original dino
+  if (!dino && dinoTexture) {
+    const material = new THREE.SpriteMaterial({ map: dinoTexture });
+    dino = new THREE.Sprite(material);
+    dino.scale.set(PLAYER_SIZE.x, PLAYER_SIZE.y, 1);
+    dino.position.set(PLAYER_X, GROUND_Y + PLAYER_SIZE.y/2, 0);
+    scene.add(dino);
+  }
 }
 
 function updateLEffect(now) {
-  if (!lEffectActive || !dino) return;
+  if (!lEffectActive || !lEffectDino) return;
   const elapsed = now - lEffectStartTime;
   if (elapsed > L_EFFECT_TOTAL_DURATION) {
     stopLEffect();
@@ -326,7 +376,7 @@ function updateLEffect(now) {
     case 0: // Zoom in
       {
         let t = Math.min(1, stateElapsed / L_EFFECT_ZOOM_TIME);
-        dino.scale.set(
+        lEffectDino.scale.set(
           lEffectOrigScale.x + (L_EFFECT_ZOOM_SCALE - lEffectOrigScale.x) * t,
           lEffectOrigScale.y + (L_EFFECT_ZOOM_SCALE * 1.08 - lEffectOrigScale.y) * t,
           1
@@ -343,7 +393,7 @@ function updateLEffect(now) {
       if (stateElapsed < L_EFFECT_BURST_TIME) {
         // Only burst once per burst state
         if (!lEffectZooming) {
-          spawnParticlesAt(dino.position.x, dino.position.y + 1.16, 0.03);
+          spawnParticlesAt(lEffectDino.position.x, lEffectDino.position.y + 1.16, 0.03);
           lEffectZooming = true;
         }
       } else {
@@ -355,7 +405,7 @@ function updateLEffect(now) {
     case 2: // Zoom out
       {
         let t = Math.min(1, stateElapsed / L_EFFECT_ZOOM_TIME);
-        dino.scale.set(
+        lEffectDino.scale.set(
           L_EFFECT_ZOOM_SCALE + (lEffectOrigScale.x - L_EFFECT_ZOOM_SCALE) * t,
           L_EFFECT_ZOOM_SCALE * 1.08 + (lEffectOrigScale.y - L_EFFECT_ZOOM_SCALE * 1.08) * t,
           1
@@ -371,7 +421,7 @@ function updateLEffect(now) {
     case 3: // Zoom in again
       {
         let t = Math.min(1, stateElapsed / L_EFFECT_ZOOM_TIME);
-        dino.scale.set(
+        lEffectDino.scale.set(
           lEffectOrigScale.x + (L_EFFECT_ZOOM_SCALE - lEffectOrigScale.x) * t,
           lEffectOrigScale.y + (L_EFFECT_ZOOM_SCALE * 1.08 - lEffectOrigScale.y) * t,
           1
@@ -387,7 +437,7 @@ function updateLEffect(now) {
     case 4: // Burst again
       if (stateElapsed < L_EFFECT_BURST_TIME) {
         if (!lEffectZooming) {
-          spawnParticlesAt(dino.position.x, dino.position.y + 1.16, 0.03);
+          spawnParticlesAt(lEffectDino.position.x, lEffectDino.position.y + 1.16, 0.03);
           lEffectZooming = true;
         }
       } else {
