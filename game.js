@@ -280,6 +280,125 @@ function resetEffectVisuals() {
   babyOilActive = false;
 }
 
+// --- L KEY SPECIAL EFFECT ---
+let lEffectActive = false;
+let lEffectStartTime = 0;
+let lEffectZooming = false;
+let lEffectState = 0; // 0=zoom in, 1=burst, 2=zoom out, 3=zoom in, 4=burst
+let lEffectLastStateSwitch = 0;
+const L_EFFECT_TOTAL_DURATION = 10000; // ms
+const L_EFFECT_ZOOM_SCALE = 4.2;
+const L_EFFECT_ZOOM_TIME = 170; // ms
+const L_EFFECT_BURST_TIME = 160; // ms
+let lEffectOrigScale = null;
+let lEffectOrigCameraZoom = null;
+
+function triggerLEffect() {
+  if (!dino || lEffectActive) return;
+  lEffectActive = true;
+  lEffectStartTime = performance.now();
+  lEffectState = 0;
+  lEffectLastStateSwitch = lEffectStartTime;
+  lEffectOrigScale = dino.scale.clone();
+  lEffectOrigCameraZoom = camera.zoom;
+}
+
+function stopLEffect() {
+  if (!dino) return;
+  // Restore dino scale and camera zoom
+  dino.scale.copy(lEffectOrigScale);
+  camera.zoom = lEffectOrigCameraZoom;
+  camera.updateProjectionMatrix();
+  lEffectActive = false;
+}
+
+function updateLEffect(now) {
+  if (!lEffectActive || !dino) return;
+  const elapsed = now - lEffectStartTime;
+  if (elapsed > L_EFFECT_TOTAL_DURATION) {
+    stopLEffect();
+    return;
+  }
+
+  let stateElapsed = now - lEffectLastStateSwitch;
+
+  switch (lEffectState) {
+    case 0: // Zoom in
+      {
+        let t = Math.min(1, stateElapsed / L_EFFECT_ZOOM_TIME);
+        dino.scale.set(
+          lEffectOrigScale.x + (L_EFFECT_ZOOM_SCALE - lEffectOrigScale.x) * t,
+          lEffectOrigScale.y + (L_EFFECT_ZOOM_SCALE * 1.08 - lEffectOrigScale.y) * t,
+          1
+        );
+        camera.zoom = lEffectOrigCameraZoom + (1.37 - lEffectOrigCameraZoom) * t;
+        camera.updateProjectionMatrix();
+        if (t === 1) {
+          lEffectState++;
+          lEffectLastStateSwitch = now;
+        }
+      }
+      break;
+    case 1: // Burst (squirt white particles)
+      if (stateElapsed < L_EFFECT_BURST_TIME) {
+        // Only burst once per burst state
+        if (!lEffectZooming) {
+          spawnParticlesAt(dino.position.x, dino.position.y + 1.16, 0.03);
+          lEffectZooming = true;
+        }
+      } else {
+        lEffectState++;
+        lEffectZooming = false;
+        lEffectLastStateSwitch = now;
+      }
+      break;
+    case 2: // Zoom out
+      {
+        let t = Math.min(1, stateElapsed / L_EFFECT_ZOOM_TIME);
+        dino.scale.set(
+          L_EFFECT_ZOOM_SCALE + (lEffectOrigScale.x - L_EFFECT_ZOOM_SCALE) * t,
+          L_EFFECT_ZOOM_SCALE * 1.08 + (lEffectOrigScale.y - L_EFFECT_ZOOM_SCALE * 1.08) * t,
+          1
+        );
+        camera.zoom = 1.37 + (lEffectOrigCameraZoom - 1.37) * t;
+        camera.updateProjectionMatrix();
+        if (t === 1) {
+          lEffectState++;
+          lEffectLastStateSwitch = now;
+        }
+      }
+      break;
+    case 3: // Zoom in again
+      {
+        let t = Math.min(1, stateElapsed / L_EFFECT_ZOOM_TIME);
+        dino.scale.set(
+          lEffectOrigScale.x + (L_EFFECT_ZOOM_SCALE - lEffectOrigScale.x) * t,
+          lEffectOrigScale.y + (L_EFFECT_ZOOM_SCALE * 1.08 - lEffectOrigScale.y) * t,
+          1
+        );
+        camera.zoom = lEffectOrigCameraZoom + (1.37 - lEffectOrigCameraZoom) * t;
+        camera.updateProjectionMatrix();
+        if (t === 1) {
+          lEffectState++;
+          lEffectLastStateSwitch = now;
+        }
+      }
+      break;
+    case 4: // Burst again
+      if (stateElapsed < L_EFFECT_BURST_TIME) {
+        if (!lEffectZooming) {
+          spawnParticlesAt(dino.position.x, dino.position.y + 1.16, 0.03);
+          lEffectZooming = true;
+        }
+      } else {
+        lEffectState = 0; // Loop again
+        lEffectZooming = false;
+        lEffectLastStateSwitch = now;
+      }
+      break;
+  }
+}
+
 // --- ANIMATE ---
 function animate(now) {
   animationId = requestAnimationFrame(animate);
@@ -298,6 +417,9 @@ function animate(now) {
       }
     }
   }
+
+  // L key effect
+  updateLEffect(now);
 
   // Baby oil sprites
   if (babyOilActive) updateBabyOilSprites(now);
@@ -331,3 +453,10 @@ function showStartScreen() {
   scoreDiv.style.display = 'none';
 }
 showStartScreen();
+
+// --- KEYBOARD CONTROLS ---
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'l' || e.key === 'L') {
+    triggerLEffect();
+  }
+});
